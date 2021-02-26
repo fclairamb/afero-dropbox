@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"path"
 	"sync"
 	"testing"
 	"time"
@@ -57,6 +58,7 @@ func setup(t *testing.T) (*Fs, *require.Assertions) {
 	loadEnvFromFile(t)
 
 	token := os.Getenv("DROPBOX_TOKEN")
+	// t.Log("Token: " + token[:4] + "..." + token[len(token)-4:])
 
 	fs := NewFs(token)
 
@@ -135,8 +137,10 @@ func TestRenameFile(t *testing.T) {
 	req.False(s.IsDir())
 }
 
-func TestStat(t *testing.T) {
+func TestStatFile(t *testing.T) {
 	fs, req := setup(t)
+
+	before := time.Now()
 
 	f, err := fs.OpenFile("file1", os.O_WRONLY, 0)
 	req.NoError(err)
@@ -149,15 +153,25 @@ func TestStat(t *testing.T) {
 	// Closing the file
 	req.NoError(f.Close())
 
+	after := time.Now()
+
 	// Using the cache
 	info, err := f.Stat()
 	req.NoError(err)
 	req.Equal(int64(12), info.Size())
+	req.NotNil(info.Sys())
+	req.False(info.IsDir())
+	req.Equal("file1", info.Name())
+	req.Equal(os.FileMode(0777), info.Mode())
 
 	// Not using the cache
 	info, err = fs.Stat("file1")
 	req.NoError(err)
 	req.Equal(int64(12), info.Size())
+	req.True(info.ModTime().After(before))
+	req.True(info.ModTime().Before(after))
+	req.Equal(path.Join(fs.rootPath, "file1"), f.Name())
+	req.Equal("file1", info.Name())
 
 	// Delete the file
 	req.NoError(fs.Remove("file1"))
@@ -166,6 +180,20 @@ func TestStat(t *testing.T) {
 	info, err = fs.Stat("file1")
 	req.EqualError(err, os.ErrNotExist.Error())
 	req.Nil(info)
+}
+
+func TestStatDir(t *testing.T) {
+	fs, req := setup(t)
+
+	req.NoError(fs.Mkdir("dir1", 0))
+
+	dir1, err := fs.Open("dir1")
+	req.NoError(err)
+
+	info, errStat := dir1.Stat()
+	req.NoError(errStat)
+
+	req.True(info.IsDir())
 }
 
 func TestFileWrite(t *testing.T) {
@@ -193,7 +221,6 @@ func TestBasic(t *testing.T) {
 	req.EqualError(fs.Chmod("file1", 0777), ErrNotSupported.Error())
 	req.EqualError(fs.Chtimes("file1", time.Now(), time.Now()), ErrNotSupported.Error())
 	req.EqualError(fs.Chown("file1", 1, 1), ErrNotSupported.Error())
-
 	req.NoError(f.Sync())
 	req.EqualError(f.Truncate(10), ErrNotSupported.Error())
 }
@@ -225,6 +252,9 @@ func TestDirList(t *testing.T) {
 		req.NoError(errRead)
 		req.Len(files, 5)
 	}
+
+	dir, err = fs.Open("dir1")
+	req.NoError(err)
 
 	{ // Reading everything
 		files, errRead := dir.Readdir(2)

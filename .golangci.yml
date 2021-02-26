@@ -179,6 +179,7 @@ linters:
         - goconst
         - gocritic
         - gocyclo
+        - godot
         - godox
         - goerr113
         - gofmt
@@ -198,7 +199,9 @@ linters:
         - nakedret
         - nestif
         - nlreturn
+        - noctx
         - prealloc
+        - revive
         - nolintlint
         - rowserrcheck
         - scopelint
