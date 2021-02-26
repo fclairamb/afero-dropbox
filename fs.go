@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/afero"
 )
 
-// Fs is the dropbox filesystem
+// Fs is the dropbox filesystem.
 type Fs struct {
 	conf         dropbox.Config
 	files        files.Client
@@ -22,7 +22,7 @@ type Fs struct {
 	dirListLimit int
 }
 
-// NewFs creates new dropbox FS instance
+// NewFs creates new dropbox FS instance.
 func NewFs(token string) *Fs {
 	fs := &Fs{}
 	fs.conf = dropbox.Config{
@@ -64,7 +64,11 @@ func (fs *Fs) Mkdir(name string, _ os.FileMode) error {
 
 	_, err := fs.files.CreateFolderV2(&files.CreateFolderArg{Path: p})
 
-	return fmt.Errorf("couldn't create dir: %w", err)
+	if err != nil {
+		return fmt.Errorf("couldn't create dir: %w", err)
+	}
+
+	return nil
 }
 
 // MkdirAll creates a directory and all parent directories if necessary.
@@ -139,29 +143,37 @@ func (fs *Fs) OpenFile(name string, flag int, _ os.FileMode) (afero.File, error)
 	return file, file.openReadStream(0)
 }
 
-// Remove removes a file
+// Remove removes a file.
 func (fs *Fs) Remove(name string) error {
 	_, err := fs.files.DeleteV2(&files.DeleteArg{Path: path.Join(fs.rootPath, name)})
 
-	return fmt.Errorf("couldn't remove a file: %w", err)
+	if err != nil {
+		return fmt.Errorf("couldn't remove a file: %w", err)
+	}
+
+	return nil
 }
 
-// RemoveAll removes all files inside a directory
+// RemoveAll removes all files inside a directory.
 func (fs *Fs) RemoveAll(name string) error {
 	return fs.Remove(name)
 }
 
-// Rename renames a file
+// Rename renames a file.
 func (fs *Fs) Rename(oldname, newname string) error {
 	_, err := fs.files.MoveV2(&files.RelocationArg{RelocationPath: files.RelocationPath{
 		FromPath: path.Join(fs.rootPath, oldname),
 		ToPath:   path.Join(fs.rootPath, newname),
 	}})
 
-	return fmt.Errorf("couldn't rename file: %w", err)
+	if err != nil {
+		return fmt.Errorf("couldn't rename file: %w", err)
+	}
+
+	return nil
 }
 
-// Stat fetches the file info
+// Stat fetches the file info.
 func (fs *Fs) Stat(name string) (os.FileInfo, error) {
 	p := path.Join(fs.rootPath, name)
 
@@ -183,22 +195,22 @@ func (fs *Fs) stat(name string) (os.FileInfo, error) {
 	return newFileInfo(meta), nil
 }
 
-// Name of the fs: dropbox
+// Name of the fs: dropbox.
 func (fs *Fs) Name() string {
 	return "dropbox"
 }
 
-// Chmod is not supported
+// Chmod is not supported.
 func (fs *Fs) Chmod(name string, mode os.FileMode) error {
 	return ErrNotSupported
 }
 
-// Chown is not supported
+// Chown is not supported.
 func (fs *Fs) Chown(name string, uid int, gid int) error {
 	return ErrNotSupported
 }
 
-// Chtimes is not supported because dropbox doesn't support simply changing a time
+// Chtimes is not supported because dropbox doesn't support simply changing a time.
 func (fs *Fs) Chtimes(name string, _ time.Time, mtime time.Time) error {
 	return ErrNotSupported
 }

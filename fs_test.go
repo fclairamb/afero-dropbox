@@ -153,6 +153,10 @@ func TestStat(t *testing.T) {
 	info, err := f.Stat()
 	req.NoError(err)
 	req.Equal(int64(12), info.Size())
+	req.NotNil(info.Sys())
+	req.False(info.IsDir())
+	req.Equal("file1", info.Name())
+	req.Equal(os.FileMode(0777), info.Mode())
 
 	// Not using the cache
 	info, err = fs.Stat("file1")
@@ -193,7 +197,6 @@ func TestBasic(t *testing.T) {
 	req.EqualError(fs.Chmod("file1", 0777), ErrNotSupported.Error())
 	req.EqualError(fs.Chtimes("file1", time.Now(), time.Now()), ErrNotSupported.Error())
 	req.EqualError(fs.Chown("file1", 1, 1), ErrNotSupported.Error())
-
 	req.NoError(f.Sync())
 	req.EqualError(f.Truncate(10), ErrNotSupported.Error())
 }
@@ -225,6 +228,9 @@ func TestDirList(t *testing.T) {
 		req.NoError(errRead)
 		req.Len(files, 5)
 	}
+
+	dir, err = fs.Open("dir1")
+	req.NoError(err)
 
 	{ // Reading everything
 		files, errRead := dir.Readdir(2)

@@ -1,6 +1,7 @@
 package dropbox // nolint: golint
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,7 +13,7 @@ import (
 	"github.com/spf13/afero"
 )
 
-// File represents a file structure
+// File represents a file structure.
 type File struct {
 	fs                  *Fs
 	name                string
@@ -20,8 +21,9 @@ type File struct {
 	streamRead          io.ReadCloser
 	streamWriteCloseErr chan error
 	streamWriteErr      error
-	dirCursor           string
 	dirList             chan os.FileInfo
+	dirListCursor       string
+	dirListDone         bool
 	streamReadOffset    int64
 	cachedInfo          os.FileInfo
 }
@@ -77,8 +79,20 @@ func (f *File) Close() error {
 // Read reads up to len(b) bytes from the File.
 // It returns the number of bytes read and an error, if any.
 // EOF is signaled by a zero count with err set to io.EOF.
-func (f *File) Read(p []byte) (n int, err error) {
-	return f.streamRead.Read(p)
+func (f *File) Read(p []byte) (int, error) {
+	n, err := f.streamRead.Read(p)
+
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return n, io.EOF
+		}
+
+		return 0, fmt.Errorf("couldn't read from stream: %w", err)
+	}
+
+	f.streamReadOffset += int64(n)
+
+	return n, nil
 }
 
 // ReadAt reads len(p) bytes from the file starting at byte offset off.
@@ -131,7 +145,7 @@ func (f *File) WriteAt(p []byte, off int64) (n int, err error) {
 	return f.Write(p)
 }
 
-// Name returns the file name
+// Name returns the file name.
 func (f *File) Name() string {
 	return f.name
 }
@@ -140,12 +154,12 @@ func newFileInfo(meta files.IsMetadata) os.FileInfo {
 	return &FileInfo{meta: meta}
 }
 
-// FileInfo is dropbox file description
+// FileInfo is dropbox file description.
 type FileInfo struct {
 	meta files.IsMetadata
 }
 
-// Name returns the file name
+// Name returns the file name.
 func (f FileInfo) Name() string {
 	if file, ok := f.meta.(*files.FileMetadata); ok {
 		return file.Name
@@ -156,7 +170,7 @@ func (f FileInfo) Name() string {
 	}
 }
 
-// Size returns the file size
+// Size returns the file size.
 func (f FileInfo) Size() int64 {
 	if file, ok := f.meta.(*files.FileMetadata); ok {
 		return int64(file.Size)
@@ -165,12 +179,12 @@ func (f FileInfo) Size() int64 {
 	return 0
 }
 
-// Mode return the file mode
+// Mode return the file mode.
 func (f FileInfo) Mode() os.FileMode {
 	return simulatedFileMode
 }
 
-// ModTime returns the modification time
+// ModTime returns the modification time.
 func (f FileInfo) ModTime() time.Time {
 	if file, ok := f.meta.(*files.FileMetadata); ok {
 		return file.ClientModified
@@ -179,25 +193,25 @@ func (f FileInfo) ModTime() time.Time {
 	return time.Time{}
 }
 
-// IsDir returns if it's a directory
+// IsDir returns if it's a directory.
 func (f FileInfo) IsDir() bool {
 	_, ok := f.meta.(*files.FolderMetadata)
 
 	return ok
 }
 
-// Sys returns the underlying structure
+// Sys returns the underlying structure.
 func (f FileInfo) Sys() interface{} {
 	return f.meta
 }
 
-// Actual fetching of files
+// Actual fetching of files.
 func (f *File) _readDir() error {
 	var res *files.ListFolderResult
 	var err error
 
-	if f.dirCursor == "" {
-		// That might be disturbing to some, but nothing forbids its
+	if f.dirListCursor == "" {
+		// We're using a channel as a queue
 		f.dirList = make(chan os.FileInfo, dirListingMaxLimit)
 
 		req := &files.ListFolderArg{Path: f.name}
@@ -209,16 +223,15 @@ func (f *File) _readDir() error {
 		// We might want to use the limit here...
 		res, err = f.fs.files.ListFolder(req)
 	} else {
-		res, err = f.fs.files.ListFolderContinue(&files.ListFolderContinueArg{Cursor: f.dirCursor})
+		res, err = f.fs.files.ListFolderContinue(&files.ListFolderContinueArg{Cursor: f.dirListCursor})
 	}
 
 	if err != nil {
 		return fmt.Errorf("couldn't fetch files list: %w", err)
 	}
 
-	if res.HasMore {
-		f.dirCursor = res.Cursor
-	}
+	f.dirListCursor = res.Cursor
+	f.dirListDone = !res.HasMore
 
 	for _, m := range res.Entries {
 		f.dirList <- newFileInfo(m)
@@ -233,7 +246,7 @@ func (f *File) _readDir() error {
 func (f *File) Readdir(count int) ([]os.FileInfo, error) {
 	list := make([]os.FileInfo, 0, count)
 
-	for len(list) < count {
+	for len(list) < count && !f.dirListDone {
 		// If we don't have any available, we should request some
 		if len(f.dirList) == 0 {
 			if err := f._readDir(); err != nil {
@@ -266,7 +279,7 @@ func (f *File) Readdirnames(n int) ([]string, error) {
 	return names, nil
 }
 
-// Stat fetches the file stat with a cache
+// Stat fetches the file stat with a cache.
 func (f *File) Stat() (os.FileInfo, error) {
 	var err error
 
@@ -277,18 +290,18 @@ func (f *File) Stat() (os.FileInfo, error) {
 	return f.cachedInfo, err
 }
 
-// Sync doesn't do anything
+// Sync doesn't do anything.
 func (f *File) Sync() error {
 	return nil
 }
 
 // Truncate should truncate a file to a specific size but isn't
-// supported by dropbox
+// supported by dropbox.
 func (f *File) Truncate(size int64) error {
 	return ErrNotSupported
 }
 
-// WriteString writes a string
+// WriteString writes a string.
 func (f *File) WriteString(s string) (ret int, err error) {
 	return f.Write([]byte(s))
 }
@@ -330,15 +343,24 @@ func (f *File) openWriteStream() error {
 func (f *File) openReadStream(startAt int64) error {
 	var err error
 
-	req := &files.DownloadArg{Path: f.name}
+	f.streamReadOffset = startAt
+
+	req := &files.DownloadArg{
+		Path:         f.name,
+		ExtraHeaders: make(map[string]string),
+	}
 
 	if startAt > 0 {
-		req.ExtraHeaders["Content-Range"] = fmt.Sprintf("bytes=%d-", startAt)
+		req.ExtraHeaders["Range"] = fmt.Sprintf("bytes=%d-", startAt)
 	}
 
 	_, f.streamRead, err = f.fs.files.Download(req)
 
-	return fmt.Errorf("couldn't download file: %w", err)
+	if err != nil {
+		return fmt.Errorf("couldn't download file: %w", err)
+	}
+
+	return nil
 }
 
 func (f *File) seekRead(offset int64, whence int) (int64, error) {
