@@ -57,6 +57,7 @@ func setup(t *testing.T) (*Fs, *require.Assertions) {
 	loadEnvFromFile(t)
 
 	token := os.Getenv("DROPBOX_TOKEN")
+	t.Log("Token: " + token[:4] + "..." + token[len(token)-4:])
 
 	fs := NewFs(token)
 
