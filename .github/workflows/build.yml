@@ -18,6 +18,7 @@ jobs:
         include:
           - go: 1.16
             lint: true
+            test: true
   
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -41,12 +42,12 @@ jobs:
         run: go build -v ./...
 
       - name: Test
-        # We need GCC because of the "go test -race"
-        # env:
-        #   CGO_ENABLED: 0
+        if: matrix.test
+        env:
+          DROPBOX_TOKEN: ${{ secrets.DROPBOX_TOKEN }}
         run: |
           apt-get update && apt-get install gcc -y
-          go test -parallel 20 -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+          go test -parallel 20 -v -race -coverprofile=coverage.txt -covermode=atomic ./... -bench=./...
           bash <(curl -s https://codecov.io/bash)
 
   # For github to have a unique status check name
