@@ -332,7 +332,7 @@ func TestFileSeekRead(t *testing.T) {
 
 	{ // And from the end
 		pos, err := file.Seek(5, io.SeekEnd)
-		req.Equal(int64(5), pos)
+		req.Equal(int64(8), pos)
 		req.NoError(err)
 
 		_, err = file.Read(buffer)
