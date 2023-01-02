@@ -1,6 +1,6 @@
 module github.com/fclairamb/afero-dropbox
 
-go 1.16
+go 1.19
 
 require (
 	github.com/dropbox/dropbox-sdk-go-unofficial v5.6.0+incompatible
