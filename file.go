@@ -205,6 +205,32 @@ func (f FileInfo) Sys() interface{} {
 	return f.meta
 }
 
+func (f *File) _readDirAll() ([]os.FileInfo, error) {
+	var fis []os.FileInfo
+	dirListCursor := ""
+	for {
+		var resp *files.ListFolderResult
+		var err error
+		if len(dirListCursor) == 0 {
+			req := &files.ListFolderArg{Path: f.name}
+			resp, err = f.fs.files.ListFolder(req)
+		} else {
+			resp, err = f.fs.files.ListFolderContinue(&files.ListFolderContinueArg{Cursor: dirListCursor})
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, m := range resp.Entries {
+			fis = append(fis, newFileInfo(m))
+		}
+		dirListCursor = resp.Cursor
+		if !resp.HasMore {
+			break
+		}
+	}
+	return fis, nil
+}
+
 // Actual fetching of files.
 func (f *File) _readDir() error {
 	var res *files.ListFolderResult
@@ -243,7 +269,11 @@ func (f *File) _readDir() error {
 // Readdir lists all the files of a directory.
 // Unfortunately the dropbox API doesn't allow to limit the number of returned files per call.
 // so what we're doing here is to using a channel a temporary buffer.
+// If count <= 0, Readdir returns all the FileInfo from the directory in a single slice.
 func (f *File) Readdir(count int) ([]os.FileInfo, error) {
+	if count <= 0 {
+		return f._readDirAll()
+	}
 	list := make([]os.FileInfo, 0, count)
 
 	for len(list) < count && !f.dirListDone {
