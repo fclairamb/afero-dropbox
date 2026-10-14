@@ -8,8 +8,8 @@ import (
 	"path"
 	"time"
 
-	"github.com/dropbox/dropbox-sdk-go-unofficial/dropbox"
-	"github.com/dropbox/dropbox-sdk-go-unofficial/dropbox/files"
+	"github.com/dropbox/dropbox-sdk-go-unofficial/v6/dropbox"
+	"github.com/dropbox/dropbox-sdk-go-unofficial/v6/dropbox/files"
 	"github.com/spf13/afero"
 )
 
@@ -187,7 +187,7 @@ func (f FileInfo) Mode() os.FileMode {
 // ModTime returns the modification time.
 func (f FileInfo) ModTime() time.Time {
 	if file, ok := f.meta.(*files.FileMetadata); ok {
-		return file.ClientModified
+		return time.Time(file.ClientModified)
 	}
 
 	return time.Time{}
@@ -319,13 +319,13 @@ func (f *File) openWriteStream() error {
 	f.streamWrite = writer
 
 	go func() {
-		req := &files.CommitInfo{
+		req := &files.UploadArg{CommitInfo: files.CommitInfo{
 			Path: f.name,
 			// Dropbox API has a BUG. TODO: Report it
 			//ClientModified: time.Now().UTC(),
 			Mode:       &files.WriteMode{Tagged: dropbox.Tagged{Tag: "overwrite"}},
 			Autorename: false,
-		}
+		}}
 		meta, err := f.fs.files.Upload(req, reader)
 
 		if err != nil {
