@@ -170,8 +170,9 @@ func TestStatFile(t *testing.T) {
 	info, err = fs.Stat("file1")
 	req.NoError(err)
 	req.Equal(int64(12), info.Size())
-	req.True(info.ModTime().After(before))
-	req.True(info.ModTime().Before(after))
+	// Dropbox stores modification times with a one second resolution
+	req.False(info.ModTime().Before(before.Truncate(time.Second)))
+	req.True(info.ModTime().Before(after.Add(time.Second)))
 	req.Equal(path.Join(fs.rootPath, "file1"), f.Name())
 	req.Equal("file1", info.Name())
 
