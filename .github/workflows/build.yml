@@ -2,6 +2,7 @@ name: Build
 
 on:
   push:
+    branches: [main]
   pull_request:
 
 jobs:
@@ -29,15 +30,28 @@ jobs:
       - name: Build
         run: go build -v ./...
 
+      - name: Vet
+        run: go vet ./...
+
+  test:
+    runs-on: ubuntu-latest
+    # All runs share one Dropbox account: never run two at once
+    concurrency:
+      group: dropbox-live-tests
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27"
       # Tests that need a real Dropbox account are skipped when DROPBOX_TOKEN is absent (PRs from bots)
       - name: Test
         env:
           DROPBOX_TOKEN: ${{ secrets.DROPBOX_TOKEN }}
-        run: go test -parallel 20 -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+        run: go test -parallel 20 -race -coverprofile=coverage.txt -covermode=atomic ./...
 
   # For github to have a unique status check name
   build-status:
-    needs: build
+    needs: [build, test]
     runs-on: ubuntu-latest
     steps:
       - run: echo 'All good'
