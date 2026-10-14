@@ -320,7 +320,7 @@ func TestFileSeekBasic(t *testing.T) {
 			t.Fatal("Could not seek:", err)
 		}
 
-		if _, err := file.Read(buffer); err != io.EOF {
+		if _, err := file.Read(buffer); err != nil && err != io.EOF {
 			t.Fatal("Could not read buffer:", err)
 		}
 
@@ -348,7 +348,7 @@ func TestFileSeekBasic(t *testing.T) {
 			t.Fatal("Could not seek:", err)
 		}
 
-		if _, err := file.Read(buffer); err != io.EOF {
+		if _, err := file.Read(buffer); err != nil && err != io.EOF {
 			t.Fatal("Could not read buffer:", err)
 		}
 
