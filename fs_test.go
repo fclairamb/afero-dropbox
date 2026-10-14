@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"sync"
@@ -26,7 +25,7 @@ func varInit() {
 }
 
 func loadEnvFromFile(t *testing.T) {
-	env, err := ioutil.ReadFile(".env.json")
+	env, err := os.ReadFile(".env.json")
 	if err != nil {
 		if !os.IsNotExist(err) {
 			require.NoError(t, err)
@@ -58,13 +57,16 @@ func setup(t *testing.T) (*Fs, *require.Assertions) {
 	loadEnvFromFile(t)
 
 	token := os.Getenv("DROPBOX_TOKEN")
+	if token == "" {
+		t.Skip("DROPBOX_TOKEN is not set, skipping tests that need a real Dropbox account")
+	}
 	// t.Log("Token: " + token[:4] + "..." + token[len(token)-4:])
 
 	fs := NewFs(token)
 
 	fullPath := "/" + sanitizeName(fmt.Sprintf("Test-%s-%s", t.Name()[4:], suffix))
 
-	err := fs.MkdirAll(fullPath, os.FileMode(700))
+	err := fs.MkdirAll(fullPath, os.FileMode(0o700))
 	req.NoError(err)
 
 	fs.SetRootDirectory(fullPath)
@@ -236,7 +238,7 @@ func TestDirList(t *testing.T) {
 		f, err := fs.OpenFile(fmt.Sprintf("dir1/file_%d.txt", i), os.O_WRONLY, 0)
 		req.NoError(err)
 
-		_, err = f.WriteString(fmt.Sprintf("content %d", i))
+		_, err = fmt.Fprintf(f, "content %d", i)
 		req.NoError(err)
 
 		req.NoError(f.Close())
@@ -280,7 +282,7 @@ func TestDirList(t *testing.T) {
 	}
 }
 
-//nolint: gocyclo
+// nolint: gocyclo
 func TestFileSeekBasic(t *testing.T) {
 	fs, req := setup(t)
 

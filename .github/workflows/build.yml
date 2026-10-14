@@ -1,58 +1,43 @@
 name: Build
 
-# Controls when the action will run.
 on:
   push:
   pull_request:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  # This workflow contains a single job called "build"
   build:
-    # The type of runner that the job will run on
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     strategy:
       matrix:
-        go: [ 1.16, 1.15, 1.14 ]
-        include:
-          - go: 1.16
-            lint: true
-            test: true
-  
-    # Steps represent a sequence of tasks that will be executed as part of the job
+        go: [ "1.26", "1.27" ]
+
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
 
-      # Running golangci-lint
-      - name: Linting
-        if: matrix.lint
-        uses: golangci/golangci-lint-action@v2
-        with:
-          version: v1.37.1
-
-      # Install Go
       - name: Setup go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
+
+      - name: Linting
+        if: matrix.go == '1.27'
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
 
       - name: Build
         run: go build -v ./...
 
+      # Tests that need a real Dropbox account are skipped when DROPBOX_TOKEN is absent (PRs from bots)
       - name: Test
-        if: matrix.test
         env:
           DROPBOX_TOKEN: ${{ secrets.DROPBOX_TOKEN }}
-        run: |
-          apt-get update && apt-get install gcc -y
-          go test -parallel 20 -v -race -coverprofile=coverage.txt -covermode=atomic ./... -bench=./...
-          bash <(curl -s https://codecov.io/bash)
+        run: go test -parallel 20 -v -race -coverprofile=coverage.txt -covermode=atomic ./...
 
   # For github to have a unique status check name
   build-status:
     needs: build
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - run: echo 'All good'
