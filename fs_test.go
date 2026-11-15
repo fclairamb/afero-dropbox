@@ -197,6 +197,8 @@ func TestStatDir(t *testing.T) {
 	req.NoError(errStat)
 
 	req.True(info.IsDir())
+	req.Equal(time.Time{}, info.ModTime())
+	req.Equal(int64(0), info.Size())
 }
 
 func TestFileWrite(t *testing.T) {
@@ -310,8 +312,7 @@ func TestDirList(t *testing.T) {
 	}
 }
 
-// nolint: gocyclo
-func TestFileSeekBasic(t *testing.T) {
+func TestFileSeekRead(t *testing.T) {
 	fs, req := setup(t)
 
 	{ // Writing an initial file
@@ -329,55 +330,47 @@ func TestFileSeekBasic(t *testing.T) {
 
 	buffer := make([]byte, 5)
 
-	{ // Reading the world
-		if pos, err := file.Seek(6, io.SeekStart); err != nil || pos != 6 {
-			t.Fatal("Could not seek:", err)
-		}
+	{ // Reading "world"
+		pos, err := file.Seek(6, io.SeekStart)
+		req.NoError(err)
+		req.Equal(int64(6), pos)
 
-		if _, err := file.Read(buffer); err != nil {
-			t.Fatal("Could not read buffer:", err)
-		}
-
-		if string(buffer) != "world" {
-			t.Fatal("Bad fetch:", string(buffer))
-		}
+		_, err = file.Read(buffer)
+		req.NoError(err)
+		req.Equal("world", string(buffer))
 	}
 
 	{ // Going 3 bytes backwards
-		if pos, err := file.Seek(-3, io.SeekCurrent); err != nil || pos != 8 {
-			t.Fatal("Could not seek:", err)
+		pos, err := file.Seek(-3, io.SeekCurrent)
+		req.NoError(err)
+		req.Equal(int64(8), pos)
+
+		// The end is reached: io.EOF may come with the data or on the next read
+		if _, err = file.Read(buffer); err != nil {
+			req.ErrorIs(err, io.EOF)
 		}
 
-		if _, err := file.Read(buffer); err != nil && err != io.EOF {
-			t.Fatal("Could not read buffer:", err)
-		}
-
-		if string(buffer) != "rld !" {
-			t.Fatal("Bad fetch:", string(buffer))
-		}
+		req.Equal("rld !", string(buffer))
 	}
 
 	{ // And then going back to the beginning
-		if pos, err := file.Seek(1, io.SeekStart); err != nil || pos != 1 {
-			t.Fatal("Could not seek:", err)
-		}
+		pos, err := file.Seek(1, io.SeekStart)
+		req.NoError(err)
+		req.Equal(int64(1), pos)
 
-		if _, err := file.Read(buffer); err != nil {
-			t.Fatal("Could not read buffer:", err)
-		}
-
-		if string(buffer) != "ello " {
-			t.Fatal("Bad fetch:", string(buffer))
-		}
+		_, err = file.Read(buffer)
+		req.NoError(err)
+		req.Equal("ello ", string(buffer))
 	}
 
 	{ // And from the end
-		if pos, err := file.Seek(5, io.SeekEnd); err != nil || pos != 8 {
-			t.Fatal("Could not seek:", err)
-		}
+		pos, err := file.Seek(5, io.SeekEnd)
+		req.NoError(err)
+		req.Equal(int64(8), pos)
 
-		if _, err := file.Read(buffer); err != nil && err != io.EOF {
-			t.Fatal("Could not read buffer:", err)
+		// The end is reached: io.EOF may come with the data or on the next read
+		if _, err = file.Read(buffer); err != nil {
+			req.ErrorIs(err, io.EOF)
 		}
 
 		req.Equal("rld !", string(buffer))
@@ -389,4 +382,21 @@ func TestFileSeekBasic(t *testing.T) {
 	// And do an other seek
 	_, err := file.Seek(10, io.SeekStart)
 	req.EqualError(err, "File is closed")
+}
+
+func TestFileSeekWrite(t *testing.T) {
+	fs, req := setup(t)
+
+	file, err := fs.OpenFile("file1", os.O_WRONLY, 0777)
+	req.NoError(err)
+
+	defer func() {
+		req.NoError(file.Close())
+	}()
+
+	_, err = file.WriteString("Hello world !")
+	req.NoError(err)
+
+	_, err = file.WriteAt([]byte(" you !"), 6)
+	req.EqualError(err, ErrNotSupported.Error())
 }
