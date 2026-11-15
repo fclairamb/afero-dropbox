@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"sync"
@@ -26,7 +25,7 @@ func varInit() {
 }
 
 func loadEnvFromFile(t *testing.T) {
-	env, err := ioutil.ReadFile(".env.json")
+	env, err := os.ReadFile(".env.json")
 	if err != nil {
 		if !os.IsNotExist(err) {
 			require.NoError(t, err)
@@ -58,13 +57,16 @@ func setup(t *testing.T) (*Fs, *require.Assertions) {
 	loadEnvFromFile(t)
 
 	token := os.Getenv("DROPBOX_TOKEN")
+	if token == "" {
+		t.Skip("DROPBOX_TOKEN is not set, skipping tests that need a real Dropbox account")
+	}
 	// t.Log("Token: " + token[:4] + "..." + token[len(token)-4:])
 
 	fs := NewFs(token)
 
 	fullPath := "/" + sanitizeName(fmt.Sprintf("Test-%s-%s", t.Name()[4:], suffix))
 
-	err := fs.MkdirAll(fullPath, os.FileMode(700))
+	err := fs.MkdirAll(fullPath, os.FileMode(0o700))
 	req.NoError(err)
 
 	fs.SetRootDirectory(fullPath)
@@ -168,8 +170,9 @@ func TestStatFile(t *testing.T) {
 	info, err = fs.Stat("file1")
 	req.NoError(err)
 	req.Equal(int64(12), info.Size())
-	req.True(info.ModTime().After(before))
-	req.True(info.ModTime().Before(after))
+	// Dropbox stores modification times with a one second resolution
+	req.False(info.ModTime().Before(before.Truncate(time.Second)))
+	req.True(info.ModTime().Before(after.Add(time.Second)))
 	req.Equal(path.Join(fs.rootPath, "file1"), f.Name())
 	req.Equal("file1", info.Name())
 
@@ -195,7 +198,7 @@ func TestStatDir(t *testing.T) {
 
 	req.True(info.IsDir())
 	req.Equal(time.Time{}, info.ModTime())
-	req.Equal(0, info.Size())
+	req.Equal(int64(0), info.Size())
 }
 
 func TestFileWrite(t *testing.T) {
@@ -238,7 +241,7 @@ func TestDirList(t *testing.T) {
 		f, err := fs.OpenFile(fmt.Sprintf("dir1/file_%d.txt", i), os.O_WRONLY, 0)
 		req.NoError(err)
 
-		_, err = f.WriteString(fmt.Sprintf("content %d", i))
+		_, err = fmt.Fprintf(f, "content %d", i)
 		req.NoError(err)
 
 		req.NoError(f.Close())
@@ -315,8 +318,11 @@ func TestFileSeekRead(t *testing.T) {
 		req.NoError(err)
 		req.Equal(int64(8), pos)
 
-		_, err = file.Read(buffer)
-		req.EqualError(err, io.EOF.Error())
+		// The end is reached: io.EOF may come with the data or on the next read
+		if _, err = file.Read(buffer); err != nil {
+			req.ErrorIs(err, io.EOF)
+		}
+
 		req.Equal("rld !", string(buffer))
 	}
 
@@ -332,11 +338,14 @@ func TestFileSeekRead(t *testing.T) {
 
 	{ // And from the end
 		pos, err := file.Seek(5, io.SeekEnd)
-		req.Equal(int64(8), pos)
 		req.NoError(err)
+		req.Equal(int64(8), pos)
 
-		_, err = file.Read(buffer)
-		req.EqualError(err, io.EOF.Error())
+		// The end is reached: io.EOF may come with the data or on the next read
+		if _, err = file.Read(buffer); err != nil {
+			req.ErrorIs(err, io.EOF)
+		}
+
 		req.Equal("rld !", string(buffer))
 	}
 
