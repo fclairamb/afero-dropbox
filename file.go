@@ -205,32 +205,6 @@ func (f FileInfo) Sys() interface{} {
 	return f.meta
 }
 
-func (f *File) _readDirAll() ([]os.FileInfo, error) {
-	var fis []os.FileInfo
-	dirListCursor := ""
-	for {
-		var resp *files.ListFolderResult
-		var err error
-		if len(dirListCursor) == 0 {
-			req := &files.ListFolderArg{Path: f.name}
-			resp, err = f.fs.files.ListFolder(req)
-		} else {
-			resp, err = f.fs.files.ListFolderContinue(&files.ListFolderContinueArg{Cursor: dirListCursor})
-		}
-		if err != nil {
-			return nil, err
-		}
-		for _, m := range resp.Entries {
-			fis = append(fis, newFileInfo(m))
-		}
-		dirListCursor = resp.Cursor
-		if !resp.HasMore {
-			break
-		}
-	}
-	return fis, nil
-}
-
 // Actual fetching of files.
 func (f *File) _readDir() error {
 	var res *files.ListFolderResult
@@ -266,25 +240,32 @@ func (f *File) _readDir() error {
 	return nil
 }
 
-// Readdir lists all the files of a directory.
-// Unfortunately the dropbox API doesn't allow to limit the number of returned files per call.
-// so what we're doing here is to using a channel a temporary buffer.
-// If count <= 0, Readdir returns all the FileInfo from the directory in a single slice.
+// Readdir lists the files of a directory, count at a time: an empty list means the end
+// has been reached. As with os.File, a count of zero or less returns all the remaining
+// files in one call.
+// The dropbox API pages the listing its own way, so the entries received and not yet
+// returned wait in a channel used as a queue.
 func (f *File) Readdir(count int) ([]os.FileInfo, error) {
-	if count <= 0 {
-		return f._readDirAll()
-	}
-	list := make([]os.FileInfo, 0, count)
+	all := count <= 0
 
-	for len(list) < count && !f.dirListDone {
+	var list []os.FileInfo
+	if !all {
+		list = make([]os.FileInfo, 0, count)
+	}
+
+	for all || len(list) < count {
 		// If we don't have any available, we should request some
 		if len(f.dirList) == 0 {
+			if f.dirListDone {
+				break
+			}
+
 			if err := f._readDir(); err != nil {
 				return nil, err
 			}
 		}
 
-		for len(list) < count && len(f.dirList) > 0 {
+		for (all || len(list) < count) && len(f.dirList) > 0 {
 			list = append(list, <-f.dirList)
 		}
 	}
