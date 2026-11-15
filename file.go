@@ -240,21 +240,32 @@ func (f *File) _readDir() error {
 	return nil
 }
 
-// Readdir lists all the files of a directory.
-// Unfortunately the dropbox API doesn't allow to limit the number of returned files per call.
-// so what we're doing here is to using a channel a temporary buffer.
+// Readdir lists the files of a directory, count at a time: an empty list means the end
+// has been reached. As with os.File, a count of zero or less returns all the remaining
+// files in one call.
+// The dropbox API pages the listing its own way, so the entries received and not yet
+// returned wait in a channel used as a queue.
 func (f *File) Readdir(count int) ([]os.FileInfo, error) {
-	list := make([]os.FileInfo, 0, count)
+	all := count <= 0
 
-	for len(list) < count && !f.dirListDone {
+	var list []os.FileInfo
+	if !all {
+		list = make([]os.FileInfo, 0, count)
+	}
+
+	for all || len(list) < count {
 		// If we don't have any available, we should request some
 		if len(f.dirList) == 0 {
+			if f.dirListDone {
+				break
+			}
+
 			if err := f._readDir(); err != nil {
 				return nil, err
 			}
 		}
 
-		for len(list) < count && len(f.dirList) > 0 {
+		for (all || len(list) < count) && len(f.dirList) > 0 {
 			list = append(list, <-f.dirList)
 		}
 	}

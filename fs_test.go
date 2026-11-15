@@ -281,6 +281,33 @@ func TestDirList(t *testing.T) {
 		req.NoError(err)
 		req.Len(filenames, 5)
 	}
+
+	// A count of zero or less reads everything, as with os.File
+	for _, count := range []int{0, -1} {
+		dir, err = fs.Open("dir1")
+		req.NoError(err)
+
+		files, errRead := dir.Readdir(count)
+		req.NoError(errRead)
+		req.Len(files, 5)
+
+		files, errRead = dir.Readdir(count)
+		req.NoError(errRead)
+		req.Empty(files)
+	}
+
+	dir, err = fs.Open("dir1")
+	req.NoError(err)
+
+	{ // Everything that is left after a first partial read
+		files, errRead := dir.Readdir(2)
+		req.NoError(errRead)
+		req.Len(files, 2)
+
+		filenames, errRead := dir.Readdirnames(-1)
+		req.NoError(errRead)
+		req.Len(filenames, 3)
+	}
 }
 
 // nolint: gocyclo
